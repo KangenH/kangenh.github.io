@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>珠算练习 · 移动版</title>
+    <style>
+        /* 全局重置 — 与PC端风格一致：无圆角，白底，清晰边框 */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+        html, body {
+            height: 100%;
+            font-family: 'Times New Roman', 'Hiragino Mincho ProN', 'Yu Mincho', serif;
+            background: #f2f2f2;
+            touch-action: manipulation;
+        }
+        .app {
+            display: flex;
+            flex-direction: column;
+            width: 100%;
+            min-height: 100vh;
+            background: #ffffff;
+            padding: 16px 18px 12px;
+            border: 1px solid #ccc;
+            margin: 0 auto;
+            max-width: 600px; /* 可选，太宽时居中 */
+        }
+        /* 状态栏 */
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #aaa;
+            margin-bottom: 14px;
+            font-size: 16px;
+            color: #000;
+            flex-shrink: 0;
+        }
+        .status-bar .level {
+            font-weight: 700;
+            border: 1px solid #000;
+            padding: 0 14px;
+            font-size: 16px;
+        }
+        .status-bar .progress {
+            font-weight: 600;
+        }
+        .status-bar .score {
+            font-weight: 600;
+            color: #1a7a3a;
+        }
+
+        /* 题目卡片 — 填充剩余空间 */
+        .question-card {
+            background: #fff;
+            border: 1px solid #aaa;
+            padding: 14px 16px 10px;
+            margin-bottom: 14px;
+            flex: 1 1 auto; /* 占据剩余空间 */
+            min-height: 150px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .question-type {
+            font-size: 15px;
+            color: #444;
+            text-align: center;
+            margin-bottom: 4px;
+            letter-spacing: 1px;
+            border-bottom: 1px dotted #ccc;
+            padding-bottom: 4px;
+        }
+        .question-body {
+            font-size: clamp(20px, 5vw, 32px);
+            line-height: 1.8;
+            text-align: right;
+            font-family: 'Times New Roman', 'Courier New', monospace;
+            padding: 8px 0;
+        }
+        .question-body.vertical {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 2px;
+        }
+        .question-body.vertical .term {
+            display: flex;
+            justify-content: flex-end;
+            gap: 4px;
+            font-size: inherit;
+        }
+        .question-body.vertical .term .sign {
+            min-width: 18px;
+            text-align: right;
+            padding-right: .3em;
+        }
+        .question-body.vertical .term .num {
+            font-variant-numeric: tabular-nums;
+            min-width: 70px;
+            text-align: right;
+        }
+        .question-body.vertical .line {
+            border-bottom: 2px solid #000;
+            width: 100%;
+            max-width: 120px;
+            margin: 4px 0 4px auto;
+        }
+        .question-body.inline {
+            font-size: clamp(22px, 5.5vw, 34px);
+            text-align: right;
+            padding: 8px 0;
+        }
+
+        /* 反馈 */
+        .feedback {
+            text-align: center;
+            font-size: 18px;
+            font-weight: 600;
+            min-height: 32px;
+            margin: 6px 0 4px;
+            border-top: 1px solid #eee;
+            padding-top: 6px;
+        }
+        .feedback.correct { color: #1a7a3a; }
+        .feedback.wrong { color: #b33c2a; }
+
+        /* 数字键盘 — 固定高度，不拉伸 */
+        .numpad {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 6px;
+            background: #f8f6f2;
+            padding: 10px;
+            border: 1px solid #ccc;
+            flex-shrink: 0; /* 不拉伸 */
+            /* 高度由按钮内容决定，不设置固定高度 */
+            margin-bottom: 10px;
+        }
+        .numpad button {
+            background: #ffffff;
+            border: 1px solid #aaa;
+            font-size: clamp(22px, 5vw, 32px);
+            font-family: 'Times New Roman', serif;
+            font-weight: 500;
+            color: #1e1e1e;
+            transition: 0.06s;
+            touch-action: manipulation;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-height: 48px;
+            padding: 4px 0;
+            box-shadow: none;
+        }
+        .numpad button:active {
+            background: #ddd8d0;
+            transform: scale(0.96);
+        }
+        .numpad .btn-clear {
+            background: #e8e0d6;
+            font-size: clamp(18px, 4vw, 24px);
+        }
+        .numpad .btn-enter {
+            background: #1a7a3a;
+            color: #fff;
+            border-color: #1a7a3a;
+        }
+        .numpad .btn-enter:active {
+            background: #0f5e2b;
+        }
+        .numpad .btn-back {
+            background: #e8e0d6;
+        }
+        .numpad .btn-neg {
+            background: #e8e0d6;
+        }
+        .numpad .btn-dot {
+            background: #e8e0d6;
+            font-weight: 600;
+        }
+        .numpad .btn-placeholder {
+            visibility: hidden;
+        }
+
+        /* 跳转控制栏 */
+        .nav-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 6px;
+            margin-bottom: 10px;
+            flex-shrink: 0;
+            flex-wrap: wrap;
+        }
+        .nav-controls .nav-group {
+            display: flex;
+            gap: 4px;
+        }
+        .nav-controls button {
+            background: #fff;
+            border: 1px solid #555;
+            padding: 4px 12px;
+            font-size: 15px;
+            font-family: 'Times New Roman', serif;
+            cursor: pointer;
+            touch-action: manipulation;
+            color: #000;
+        }
+        .nav-controls button:active {
+            background: #ddd;
+        }
+        .nav-controls .btn-part {
+            border-color: #888;
+            font-weight: 600;
+            min-width: 32px;
+        }
+        .nav-controls .btn-part.active {
+            background: #000;
+            color: #fff;
+            border-color: #000;
+        }
+
+        /* 底部控制栏（级别/重置） */
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-shrink: 0;
+            border-top: 1px solid #aaa;
+            padding-top: 10px;
+        }
+        .controls select {
+            background: #fff;
+            border: 1px solid #555;
+            padding: 4px 10px;
+            font-size: 16px;
+            font-family: 'Times New Roman', serif;
+            outline: none;
+            flex: 1;
+        }
+        .controls .btn-reset {
+            background: #000;
+            color: #fff;
+            border: 1px solid #000;
+            padding: 4px 18px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            touch-action: manipulation;
+            font-family: 'Times New Roman', serif;
+        }
+        .controls .btn-reset:active {
+            background: #333;
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            top: 16px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.8);
+            color: #fff;
+            padding: 6px 20px;
+            font-size: 16px;
+            font-weight: 600;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.25s;
+            z-index: 100;
+            border: 1px solid #333;
+            font-family: 'Times New Roman', serif;
+        }
+        .toast.show {
+            opacity: 1;
+        }
+
+        /* 超小屏适配 */
+        @media (max-width: 380px) {
+            .app { padding: 10px 8px; }
+            .numpad button { min-height: 40px; font-size: 20px; }
+            .question-body { font-size: 18px; }
+        }
+        /* 横屏小屏时压缩键盘高度 */
+        @media (orientation: landscape) and (max-height: 500px) {
+            .numpad button { min-height: 36px; font-size: 18px; }
+            .question-card { min-height: 100px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="app" id="app">
+    <!-- 状态栏 -->
+    <div class="status-bar">
+        <span class="level" id="levelDisplay">3 級</span>
+        <span class="progress" id="progressDisplay">1 / 50</span>
+        <span class="score" id="scoreDisplay">✅ 0</span>
+    </div>
+
+    <!-- 题目卡片 -->
+    <div class="question-card" id="questionCard">
+        <div class="question-type" id="questionType">見取算</div>
+        <div class="question-body" id="questionBody"></div>
+        <div class="feedback" id="feedback"></div>
+    </div>
+
+    <!-- 跳转控制 -->
+    <div class="nav-controls">
+        <div class="nav-group">
+            <button id="prevBtn">‹ 前へ</button>
+            <button id="nextBtn">次へ ›</button>
+        </div>
+        <div class="nav-group">
+            <button class="btn-part" data-part="0">A</button>
+            <button class="btn-part" data-part="1">B</button>
+            <button class="btn-part" data-part="2">C</button>
+        </div>
+    </div>
+
+    <!-- 数字键盘 -->
+    <div class="numpad" id="numpad">
+        <button data-value="7">7</button>
+        <button data-value="8">8</button>
+        <button data-value="9">9</button>
+        <button class="btn-back" data-value="back">⌫</button>
+        <button data-value="4">4</button>
+        <button data-value="5">5</button>
+        <button data-value="6">6</button>
+        <button class="btn-clear" data-value="clear">C</button>
+        <button data-value="1">1</button>
+        <button data-value="2">2</button>
+        <button data-value="3">3</button>
+        <button class="btn-neg" data-value="neg">−</button>
+        <button data-value="0">0</button>
+        <button class="btn-dot" data-value=".">.</button>
+        <button class="btn-enter" data-value="enter">⏎</button>
+        <button class="btn-placeholder" style="visibility:hidden;"></button>
+    </div>
+
+    <!-- 底部控制 -->
+    <div class="controls">
+        <select id="levelSelect">
+            <option value="1">1 級</option>
+            <option value="2">2 級</option>
+            <option value="3" selected>3 級</option>
+            <option value="4">4 級</option>
+            <option value="5">5 級</option>
+            <option value="6">6 級</option>
+        </select>
+        <button class="btn-reset" id="resetBtn">↻ やり直し</button>
+    </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<script>
+(function() {
+    'use strict';
+
+    // ----- 题目生成（与PC版完全一致）-----
+    const LEVEL_CONFIG = {
+        1: { mitorizan: { digits: 10, terms: 10, count: 10 }, multiplication: { totalDigits: 11, count: 20 }, division: { totalDigits: 10, count: 20 } },
+        2: { mitorizan: { digits: 8, terms: 10, count: 10 }, multiplication: { totalDigits: 9, count: 20 }, division: { totalDigits: 8, count: 20 } },
+        3: { mitorizan: { digits: 6, terms: 10, count: 10 }, multiplication: { totalDigits: 7, count: 20 }, division: { totalDigits: 6, count: 20 } },
+        4: { mitorizan: { digits: 5, terms: 10, count: 10 }, multiplication: { totalDigits: 7, count: 20 }, division: { totalDigits: 6, count: 20 } },
+        5: { mitorizan: { digits: 4, terms: 10, count: 10 }, multiplication: { totalDigits: 6, count: 20 }, division: { totalDigits: 5, count: 20 } },
+        6: { mitorizan: { digits: 3, terms: 10, count: 10 }, multiplication: { totalDigits: 5, count: 20 }, division: { totalDigits: 4, count: 20 } }
+    };
+
+    function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+
+    function randomNumber(digits) {
+        if (digits === 1) return rand(1, 9);
+        let first = rand(1, 9), rest = '';
+        for (let i = 1; i < digits; i++) rest += rand(0, 9);
+        return parseInt(first + rest, 10);
+    }
+
+    function randomDecimal(integerDigits, decimalDigits) {
+        let intPart = randomNumber(integerDigits);
+        if (decimalDigits === 0) return intPart;
+        let decPart = '';
+        for (let i = 0; i < decimalDigits; i++) {
+            if (i === decimalDigits - 1) {
+                decPart += rand(1, 9);
+            } else {
+                decPart += rand(0, 9);
+            }
+        }
+        return parseFloat(intPart + '.' + decPart);
+    }
+
+    function roundTo(value, decimals) {
+        const factor = Math.pow(10, decimals);
+        return Math.round(value * factor) / factor;
+    }
+
+    function formatNumber(num) {
+        if (num === undefined || num === null) return '';
+        if (Number.isInteger(num)) return num.toLocaleString('en-US');
+        let str = num.toFixed(6).replace(/\.?0+$/, '');
+        let parts = str.split('.');
+        let intPart = parts[0];
+        let decPart = parts[1] || '';
+        let formattedInt = parseInt(intPart).toLocaleString('en-US');
+        return decPart ? formattedInt + '.' + decPart : formattedInt;
+    }
+
+    function generateMitorizan(level, type) {
+        const cfg = LEVEL_CONFIG[level];
+        const digits = cfg.mitorizan.digits;
+        const terms = cfg.mitorizan.terms;
+        let numbers = [];
+        let total = 0;
+
+        if (type === 0) {
+            for (let i = 0; i < terms; i++) {
+                let num = randomNumber(digits);
+                numbers.push(num);
+                total += num;
+            }
+            if (total <= 0) return generateMitorizan(level, type);
+        } else {
+            let subCount = rand(3, Math.min(5, terms - 1));
+            let indices = [];
+            for (let i = 1; i < terms; i++) indices.push(i);
+            for (let i = indices.length - 1; i > 0; i--) {
+                const j = rand(0, i);
+                [indices[i], indices[j]] = [indices[j], indices[i]];
+            }
+            let subPositions = indices.slice(0, subCount);
+            let posNums = [];
+            for (let i = 0; i < terms; i++) posNums.push(randomNumber(digits));
+
+            if (type === 1) {
+                let cum = 0, ok = true;
+                for (let i = 0; i < terms; i++) {
+                    let val = posNums[i];
+                    if (subPositions.includes(i)) {
+                        if (cum <= val) { ok = false; break; }
+                        cum -= val;
+                    } else cum += val;
+                }
+                if (!ok || cum <= 0) return generateMitorizan(level, type);
+                numbers = posNums.map((v, i) => subPositions.includes(i) ? -v : v);
+                total = cum;
+            } else {
+                let cum = 0, found = false;
+                for (let i = 0; i < terms; i++) {
+                    let val = posNums[i];
+                    if (subPositions.includes(i)) {
+                        if (cum < val) found = true;
+                        cum -= val;
+                    } else cum += val;
+                }
+                if (!found || cum <= 0) return generateMitorizan(level, type);
+                numbers = posNums.map((v, i) => subPositions.includes(i) ? -v : v);
+                total = cum;
+            }
+        }
+
+        let termsArr = [];
+        for (let i = 0; i < numbers.length; i++) {
+            let val = numbers[i];
+            let sign = (i === 0) ? '' : (val < 0 ? '−' : '');
+            let absVal = Math.abs(val);
+            let formatted = formatNumber(absVal);
+            termsArr.push({ sign: sign, num: formatted });
+        }
+        return {
+            type: 'mitorizan',
+            typeLabel: '見取算',
+            terms: termsArr,
+            answer: total,
+            expressionText: termsArr.map(t => (t.sign ? t.sign + ' ' : '') + t.num).join(' ')
+        };
+    }
+
+    function generateMultiplication(level) {
+        const cfg = LEVEL_CONFIG[level];
+        const totalDigits = cfg.multiplication.totalDigits;
+        let digitsA = Math.floor(totalDigits / 2);
+        let digitsB = totalDigits - digitsA;
+        if (Math.abs(digitsA - digitsB) > 1) {
+            if (digitsA > digitsB) { digitsA--; digitsB++; }
+            else { digitsA++; digitsB--; }
+        }
+
+        const isInteger = Math.random() < 0.5;
+        let a, b;
+        if (isInteger) {
+            a = randomNumber(digitsA);
+            b = randomNumber(digitsB);
+        } else {
+            let intA = rand(1, digitsA - 1);
+            let decA = digitsA - intA;
+            a = randomDecimal(intA, decA);
+            let intB = rand(1, digitsB - 1);
+            let decB = digitsB - intB;
+            b = randomDecimal(intB, decB);
+        }
+        if (Math.random() < 0.5) {
+            [a, b] = [b, a];
+        }
+        let answer = a * b;
+        if (!Number.isInteger(answer)) answer = roundTo(answer, 2);
+        return {
+            type: 'multiplication',
+            typeLabel: '乗算',
+            expressionText: formatNumber(a) + ' × ' + formatNumber(b),
+            answer: answer
+        };
+    }
+
+    function generateDivision(level, needRound) {
+        const cfg = LEVEL_CONFIG[level];
+        const totalDigits = cfg.division.totalDigits;
+        let digitsDivisor = Math.floor(totalDigits / 2);
+        let digitsQuotient = totalDigits - digitsDivisor;
+        if (Math.abs(digitsDivisor - digitsQuotient) > 1) {
+            if (digitsDivisor > digitsQuotient) { digitsDivisor--; digitsQuotient++; }
+            else { digitsDivisor++; digitsQuotient--; }
+        }
+
+        const isInteger = Math.random() < 0.5;
+        let divisor, quotient, dividend;
+        let maxAttempts = 100;
+        while (maxAttempts-- > 0) {
+            if (isInteger) {
+                divisor = randomNumber(digitsDivisor);
+                quotient = randomNumber(digitsQuotient);
+            } else {
+                let intD = rand(1, digitsDivisor - 1);
+                let decD = digitsDivisor - intD;
+                divisor = randomDecimal(intD, decD);
+                let intQ = rand(1, digitsQuotient - 1);
+                let decQ = digitsQuotient - intQ;
+                quotient = randomDecimal(intQ, decQ);
+            }
+            if (divisor === 0) continue;
+            if (needRound) {
+                let dividendInt = randomNumber(digitsDivisor + digitsQuotient);
+                let quotientCalc = dividendInt / divisor;
+                let isTerminating = false;
+                if (Number.isInteger(quotientCalc)) isTerminating = true;
+                else {
+                    let str = quotientCalc.toFixed(10);
+                    let decimalPart = str.split('.')[1] || '';
+                    if (decimalPart.length <= 2 || /^0+$/.test(decimalPart)) isTerminating = true;
+                }
+                if (!isTerminating) {
+                    dividend = dividendInt;
+                    quotient = roundTo(quotientCalc, 2);
+                    break;
+                }
+            } else {
+                dividend = quotient * divisor;
+                break;
+            }
+        }
+        if (maxAttempts <= 0) {
+            if (isInteger) {
+                divisor = randomNumber(digitsDivisor);
+                quotient = randomNumber(digitsQuotient);
+                if (divisor === 0) divisor = 1;
+                dividend = quotient * divisor;
+            } else {
+                let intD = rand(1, digitsDivisor - 1);
+                let decD = digitsDivisor - intD;
+                divisor = randomDecimal(intD, decD);
+                let intQ = rand(1, digitsQuotient - 1);
+                let decQ = digitsQuotient - intQ;
+                quotient = randomDecimal(intQ, decQ);
+                if (needRound) {
+                    let frac = rand(1, 99) / 100;
+                    quotient = quotient + frac;
+                    dividend = quotient * divisor;
+                    quotient = roundTo(quotient, 2);
+                } else {
+                    dividend = quotient * divisor;
+                }
+            }
+        }
+        if (!Number.isInteger(dividend)) dividend = roundTo(dividend, 2);
+        if (!Number.isInteger(quotient)) quotient = roundTo(quotient, 2);
+        if (!Number.isInteger(divisor)) divisor = roundTo(divisor, 2);
+        dividend = quotient * divisor;
+        if (!Number.isInteger(dividend)) dividend = roundTo(dividend, 2);
+
+        return {
+            type: 'division',
+            typeLabel: '除算',
+            expressionText: formatNumber(dividend) + ' ÷ ' + formatNumber(divisor),
+            answer: quotient
+        };
+    }
+
+    function generateExam(level) {
+        let mitorizanQuestions = [];
+        for (let i = 0; i < 6; i++) mitorizanQuestions.push(generateMitorizan(level, 0));
+        for (let i = 0; i < 3; i++) mitorizanQuestions.push(generateMitorizan(level, 1));
+        mitorizanQuestions.push(generateMitorizan(level, 2));
+        for (let i = mitorizanQuestions.length - 1; i > 0; i--) {
+            const j = rand(0, i);
+            [mitorizanQuestions[i], mitorizanQuestions[j]] = [mitorizanQuestions[j], mitorizanQuestions[i]];
+        }
+
+        let questions = [];
+        questions.push(...mitorizanQuestions);
+        for (let i = 0; i < 20; i++) questions.push(generateMultiplication(level));
+        for (let i = 0; i < 16; i++) questions.push(generateDivision(level, false));
+        for (let i = 0; i < 4; i++) questions.push(generateDivision(level, true));
+
+        return questions.map((q, index) => ({
+            ...q,
+            id: 'q_' + Date.now() + '_' + index + '_' + Math.random().toString(36).substr(2, 6),
+            userAnswer: null,
+            isCorrect: null
+        }));
+    }
+
+    // ----- 移动端控制器 -----
+    let allQuestions = [];
+    let currentIndex = 0;
+    let correctCount = 0;
+    let isAnswered = false;
+    let inputStr = '';
+    let jumpTimer = null;
+    // 各部分起始索引
+    let partStart = { A: 0, B: 10, C: 30 }; // A=見取算10题, B=乗算20题, C=除算20题
+
+    const levelSelect = document.getElementById('levelSelect');
+    const levelDisplay = document.getElementById('levelDisplay');
+    const progressDisplay = document.getElementById('progressDisplay');
+    const scoreDisplay = document.getElementById('scoreDisplay');
+    const questionType = document.getElementById('questionType');
+    const questionBody = document.getElementById('questionBody');
+    const feedback = document.getElementById('feedback');
+    const toast = document.getElementById('toast');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const partBtns = document.querySelectorAll('.btn-part');
+
+    function displayQuestion(index) {
+        if (index >= allQuestions.length) {
+            questionBody.innerHTML = '<div style="text-align:center;font-size:20px;padding:20px 0;">🎉 すべて完了！</div>';
+            questionType.textContent = 'お疲れ様でした';
+            feedback.textContent = '';
+            feedback.className = 'feedback';
+            isAnswered = true;
+            // 更新高亮部分按钮
+            updatePartHighlight(-1);
+            return;
+        }
+        const q = allQuestions[index];
+        let bodyHtml = '';
+        if (q.type === 'mitorizan') {
+            bodyHtml = '<div class="question-body vertical">';
+            q.terms.forEach((t) => {
+                let signDisplay = t.sign ? t.sign : '';
+                bodyHtml += `<div class="term"><span class="sign">${signDisplay}</span><span class="num">${t.num}</span></div>`;
+            });
+            bodyHtml += `<div class="line"></div></div>`;
+            questionType.textContent = 'A みとり算';
+        } else if (q.type === 'multiplication') {
+            bodyHtml = `<div class="question-body inline">${q.expressionText} =</div>`;
+            questionType.textContent = 'B かけ算';
+        } else {
+            bodyHtml = `<div class="question-body inline">${q.expressionText} =</div>`;
+            questionType.textContent = 'C わり算';
+        }
+        questionBody.innerHTML = bodyHtml;
+
+        // 恢复已有的答案和状态
+        if (q.userAnswer !== null && q.userAnswer !== '') {
+            feedback.textContent = q.isCorrect ? '✅ 正解！' : `❌ 誤り (正解: ${formatNumber(q.answer)})`;
+            feedback.className = 'feedback ' + (q.isCorrect ? 'correct' : 'wrong');
+            isAnswered = true;
+            inputStr = q.userAnswer;
+        } else {
+            feedback.textContent = '';
+            feedback.className = 'feedback';
+            isAnswered = false;
+            inputStr = '';
+        }
+
+        updateProgress();
+        updatePartHighlight(index);
+        // 更新按钮可用状态
+        prevBtn.disabled = (index === 0);
+        nextBtn.disabled = (index >= allQuestions.length - 1);
+    }
+
+    function updateProgress() {
+        const total = allQuestions.length;
+        const done = Math.min(currentIndex + 1, total);
+        progressDisplay.textContent = `${done} / ${total}`;
+        scoreDisplay.textContent = `✅ ${correctCount}`;
+        levelDisplay.textContent = levelSelect.value + ' 級';
+    }
+
+    // 高亮当前所在部分按钮
+    function updatePartHighlight(index) {
+        let part = -1;
+        if (index >= 0 && index < partStart.B) part = 0;
+        else if (index >= partStart.B && index < partStart.C) part = 1;
+        else if (index >= partStart.C && index < allQuestions.length) part = 2;
+        partBtns.forEach((btn, i) => {
+            btn.classList.toggle('active', i === part);
+        });
+    }
+
+    // 跳转到指定索引（带边界检查）
+    function goToIndex(index) {
+        if (index < 0) index = 0;
+        if (index >= allQuestions.length) index = allQuestions.length - 1;
+        if (index === currentIndex) return;
+        currentIndex = index;
+        displayQuestion(currentIndex);
+    }
+
+    function handleInput(value) {
+        if (isAnswered) return;
+        const q = allQuestions[currentIndex];
+        if (!q) return;
+
+        if (value === 'back') {
+            inputStr = inputStr.slice(0, -1);
+        } else if (value === 'clear') {
+            inputStr = '';
+        } else if (value === 'neg') {
+            if (inputStr.startsWith('-')) {
+                inputStr = inputStr.slice(1);
+            } else {
+                inputStr = '-' + inputStr;
+            }
+        } else if (value === 'enter') {
+            submitAnswer();
+            return;
+        } else {
+            if (inputStr.length > 15) return;
+            if (value === '.' && inputStr.includes('.')) return;
+            inputStr += value;
+        }
+        feedback.textContent = inputStr || '␣';
+        feedback.className = 'feedback';
+    }
+
+    function submitAnswer() {
+        if (isAnswered) return;
+        const q = allQuestions[currentIndex];
+        if (!q) return;
+        if (inputStr === '' || inputStr === '-') {
+            showToast('数字を入力してください');
+            return;
+        }
+        const userAns = parseFloat(inputStr);
+        if (isNaN(userAns)) {
+            showToast('有効な数字を入力してください');
+            return;
+        }
+        const diff = Math.abs(userAns - q.answer);
+        const correct = diff < 0.001;
+        q.userAnswer = inputStr;
+        q.isCorrect = correct;
+
+        if (correct) {
+            feedback.textContent = '✅ 正解！';
+            feedback.className = 'feedback correct';
+            correctCount++;
+            isAnswered = true;
+            updateProgress();
+            // 答对：立即跳转下一题
+            clearTimeout(jumpTimer);
+            jumpTimer = setTimeout(() => {
+                if (currentIndex < allQuestions.length - 1) {
+                    goToIndex(currentIndex + 1);
+                } else {
+                    displayQuestion(allQuestions.length);
+                    showToast('🎉 すべて完了！');
+                }
+            }, 200);
+        } else {
+            feedback.textContent = `❌ 誤り (正解: ${formatNumber(q.answer)})`;
+            feedback.className = 'feedback wrong';
+            isAnswered = true;
+            updateProgress();
+            // 答错：显示正确答案后自动跳转（稍长时间）
+            clearTimeout(jumpTimer);
+            jumpTimer = setTimeout(() => {
+                if (currentIndex < allQuestions.length - 1) {
+                    goToIndex(currentIndex + 1);
+                } else {
+                    displayQuestion(allQuestions.length);
+                    showToast('🎉 すべて完了！');
+                }
+            }, 1200);
+        }
+    }
+
+    function showToast(msg) {
+        toast.textContent = msg;
+        toast.classList.add('show');
+        clearTimeout(toast._timer);
+        toast._timer = setTimeout(() => {
+            toast.classList.remove('show');
+        }, 1500);
+    }
+
+    function resetExam() {
+        const level = parseInt(levelSelect.value, 10);
+        allQuestions = generateExam(level);
+        // 更新部分起始索引（見取算10题，乘算20题，除算20题）
+        partStart.B = 10;
+        partStart.C = 30;
+        currentIndex = 0;
+        correctCount = 0;
+        isAnswered = false;
+        inputStr = '';
+        clearTimeout(jumpTimer);
+        displayQuestion(0);
+        updateProgress();
+        showToast('新しい問題を生成しました');
+    }
+
+    // 初始化事件
+    function init() {
+        // 数字键盘
+        document.querySelectorAll('.numpad button[data-value]').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                const val = this.dataset.value;
+                handleInput(val);
+            });
+            btn.addEventListener('touchstart', function(e) {
+                // 阻止双击缩放
+            }, { passive: true });
+        });
+
+        // 跳转按钮
+        prevBtn.addEventListener('click', function() {
+            if (currentIndex > 0) goToIndex(currentIndex - 1);
+        });
+        nextBtn.addEventListener('click', function() {
+            if (currentIndex < allQuestions.length - 1) goToIndex(currentIndex + 1);
+        });
+
+        // 部分跳转按钮
+        partBtns.forEach((btn, idx) => {
+            btn.addEventListener('click', function() {
+                let target = 0;
+                if (idx === 0) target = partStart.A;
+                else if (idx === 1) target = partStart.B;
+                else if (idx === 2) target = partStart.C;
+                // 如果该部分有题，跳转到该部分第一题，否则跳转到最后一题
+                if (target >= allQuestions.length) target = allQuestions.length - 1;
+                if (target < 0) target = 0;
+                goToIndex(target);
+            });
+        });
+
+        // 级别切换
+        levelSelect.addEventListener('change', function() {
+            resetExam();
+        });
+
+        // 重置
+        document.getElementById('resetBtn').addEventListener('click', function() {
+            resetExam();
+        });
+
+        // 阻止键盘弹出
+        document.addEventListener('focusin', function(e) {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+                e.target.blur();
+            }
+        });
+
+        resetExam();
+    }
+
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+
+})();
+</script>
+</body>
+</html>

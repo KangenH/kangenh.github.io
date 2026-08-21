@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>珠算能力検定 模擬試験</title>
+    <style>
+        /* 全局样式 — 简约无边框 */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            background: #f2f2f2;
+            font-family: 'Times New Roman', 'Hiragino Mincho ProN', 'Yu Mincho', serif;
+            color: #000;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+        .container {
+            max-width: 1400px;
+            width: 100%;
+            background: #ffffff;
+            padding: 30px 35px 35px 35px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            border-bottom: 3px double #000;
+            padding-bottom: 12px;
+            margin-bottom: 18px;
+        }
+        .header h1 { font-size: 28px; font-weight: 700; letter-spacing: 3px; }
+        .header .sub { font-size: 16px; margin-top: 2px; }
+        .header .level-badge {
+            display: inline-block;
+            border: 1px solid #000;
+            padding: 1px 30px;
+            font-size: 22px;
+            font-weight: 700;
+            margin-top: 4px;
+            letter-spacing: 2px;
+        }
+        .control-bar {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 12px 20px;
+            padding: 10px 0 14px 0;
+            border-bottom: 1px solid #aaa;
+            margin-bottom: 20px;
+        }
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 6px 10px;
+            flex-wrap: wrap;
+        }
+        .control-group label { font-size: 16px; font-weight: 600; }
+        select, input[type="number"] {
+            background: #fff;
+            border: 1px solid #555;
+            padding: 3px 10px;
+            font-size: 16px;
+            font-family: 'Times New Roman', serif;
+            color: #000;
+            outline: none;
+        }
+        select:focus, input[type="number"]:focus { border-color: #000; }
+        .btn {
+            background: #fff;
+            border: 1px solid #333;
+            padding: 3px 18px;
+            font-size: 15px;
+            font-family: 'Times New Roman', serif;
+            cursor: pointer;
+            color: #000;
+            transition: 0.1s;
+        }
+        .btn:hover { background: #eaeaea; }
+        .btn-primary { background: #000; color: #fff; border-color: #000; }
+        .btn-primary:hover { background: #333; }
+        .btn-sm { padding: 1px 12px; font-size: 13px; }
+
+        .stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 14px 30px;
+            padding: 6px 0 12px 0;
+            font-size: 15px;
+            border-bottom: 1px solid #aaa;
+            margin-bottom: 20px;
+        }
+        .stats span { font-weight: 700; }
+
+        /* ---- 新布局：宽屏时左（見取算）右（乘除两列） ---- */
+        .exam-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 30px 40px;
+        }
+
+        /* 宽屏下分为两列 */
+        @media (min-width: 1300px) {
+            .exam-grid {
+                grid-template-columns: 1fr 1.8fr;  /* 左列見取算，右列乘除 */
+            }
+            .section-mitorizan {
+                grid-column: 1 / 2;
+            }
+            .calc-wrapper {
+                grid-column: 2 / 3;
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 30px;
+                align-content: start;
+            }
+            .section-calc {
+                /* 每个占一列 */
+            }
+        }
+
+        /* 窄屏时回退为三行：見取算跨两列，乘除各一列 */
+        @media (max-width: 1299px) {
+            .exam-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+            .section-mitorizan {
+                grid-column: 1 / -1;
+            }
+            .calc-wrapper {
+                grid-column: 1 / -1;
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 30px;
+            }
+            .section-calc {
+                /* 各占一列 */
+            }
+        }
+
+        /* 小屏手机：单列 */
+        @media (max-width: 700px) {
+            .exam-grid {
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+            .section-mitorizan {
+                grid-column: 1;
+            }
+            .calc-wrapper {
+                grid-column: 1;
+                display: grid;
+                grid-template-columns: 1fr;
+                gap: 20px;
+            }
+        }
+
+        .section-mitorizan {
+            padding: 0;
+            background: #fff;
+        }
+        .section-calc {
+            padding: 0;
+            background: #fff;
+        }
+        .section-title {
+            font-size: 18px;
+            font-weight: 700;
+            border-bottom: 1px solid #000;
+            padding-bottom: 4px;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        .section-title small { font-weight: 400; font-size: 14px; }
+
+        .mitorizan-grid {
+            display: grid;
+            grid-template-columns: repeat(5, 1fr);
+            gap: 12px 16px;
+        }
+        .mitorizan-item {
+            padding: 4px 0;
+            background: #fff;
+        }
+        .mitorizan-item .q-label {
+            font-weight: 700;
+            font-size: 14px;
+            border-bottom: 1px dotted #bbb;
+            padding-bottom: 2px;
+            margin-bottom: 4px;
+            text-align: left;
+        }
+        .mitorizan-item .vertical-terms {
+            font-family: 'Times New Roman', 'Courier New', monospace;
+            font-size: 17px;
+            line-height: 1.6;
+            padding: 2px 0;
+            text-align: right;
+        }
+        .mitorizan-item .vertical-terms .term {
+            display: flex;
+            justify-content: flex-end;
+            gap: 0;
+            padding-right: 0;
+        }
+        .mitorizan-item .vertical-terms .term .sign {
+            min-width: 14px;
+            text-align: right;
+            padding-right: .3em;
+        }
+        .mitorizan-item .vertical-terms .term .num {
+            font-variant-numeric: tabular-nums;
+            text-align: right;
+            font-feature-settings: "tnum";
+        }
+        .mitorizan-item .vertical-terms .line {
+            border-bottom: 1px solid #000;
+            width: 100%;
+            max-width: 90px;
+            margin: 2px 0 4px auto;
+        }
+        .mitorizan-item .answer-row {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: flex-end;
+            gap: 4px 8px;
+            margin-top: 2px;
+            text-align: right;
+        }
+        .mitorizan-item .answer-row .q-input {
+            border: none;
+            background: transparent;
+            padding: 0 4px;
+            font-size: 17px;
+            width: 100px;
+            font-family: 'Times New Roman', 'Courier New', monospace;
+            text-align: right;
+            outline: none;
+            color: #000;
+            margin-left: auto;
+        }
+        .mitorizan-item .answer-row .q-input:focus {
+            outline: none;
+        }
+        .mitorizan-item .answer-row .q-result {
+            font-size: 14px;
+            font-weight: 600;
+            min-width: 50px;
+            text-align: right;
+        }
+        .mitorizan-item .answer-row .q-result .correct-mark { color: #1a7a3a; }
+        .mitorizan-item .answer-row .q-result .wrong-mark { color: #b33c2a; }
+        .mitorizan-item.correct { background: #f4faf6; }
+        .mitorizan-item.wrong { background: #fdf3f1; }
+
+        .calc-list {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .calc-item {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 4px 10px;
+            padding: 3px 0;
+            border-bottom: 1px dotted #ddd;
+            font-size: 16px;
+            background: #fff;
+        }
+        .calc-item:last-child {
+            border-bottom: none;
+        }
+        .calc-item .q-label {
+            font-weight: 600;
+            min-width: 30px;
+        }
+        .calc-item .q-expression {
+            font-family: 'Times New Roman', 'Courier New', monospace;
+            font-size: 17px;
+            min-width: 120px;
+            text-align: right;
+        }
+        .calc-item .q-input {
+            border: none;
+            background: transparent;
+            padding: 0 4px;
+            font-size: 16px;
+            width: 100px;
+            font-family: 'Times New Roman', 'Courier New', monospace;
+            text-align: left;
+            outline: none;
+            color: #000;
+        }
+        .calc-item .q-input:focus {
+            outline: none;
+        }
+        .calc-item .q-result {
+            font-size: 14px;
+            font-weight: 600;
+            min-width: 50px;
+            text-align: right;
+        }
+        .calc-item .q-result .correct-mark { color: #1a7a3a; }
+        .calc-item .q-result .wrong-mark { color: #b33c2a; }
+        .calc-item.correct { background: #f4faf6; }
+        .calc-item.wrong { background: #fdf3f1; }
+
+        .action-bar {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px 20px;
+            border-top: 1px solid #aaa;
+            padding-top: 16px;
+            margin-top: 20px;
+        }
+        .action-left {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+        .footer-note {
+            font-size: 13px;
+            color: #555;
+            text-align: center;
+            margin-top: 18px;
+            border-top: 1px solid #ddd;
+            padding-top: 14px;
+        }
+        .footer-note a { color: #000; text-decoration: underline; }
+
+        @media print {
+            .control-bar, .action-bar, .footer-note { display: none; }
+            .container { box-shadow: none; padding: 10px; }
+        }
+    </style>
+</head>
+<body>
+<div class="container" id="app">
+    <div class="header">
+        <h1>珠算能力検定 模擬試験</h1>
+        <div class="sub">(一社) 日本珠算連盟 準拠</div>
+        <div class="level-badge" id="levelDisplay">3 級</div>
+    </div>
+    <div class="control-bar">
+        <div class="control-group">
+            <label for="levelSelect">級</label>
+            <select id="levelSelect">
+                <option value="1">1 級</option><option value="2">2 級</option>
+                <option value="3" selected>3 級</option>
+                <option value="4">4 級</option><option value="5">5 級</option>
+                <option value="6">6 級</option>
+            </select>
+        </div>
+        <div class="control-group">
+            <button class="btn btn-primary" id="generateBtn">📄 出題</button>
+            <button class="btn" id="checkAllBtn">📝 すべて判断</button>
+            <button class="btn" id="clearAllBtn">🧹 解答消去</button>
+        </div>
+    </div>
+    <div class="stats">
+        <div>総問題数：<span id="totalCount">0</span></div>
+        <div>正解：<span id="correctCount">0</span></div>
+        <div>誤り：<span id="wrongCount">0</span></div>
+        <div>正答率：<span id="accuracy">—</span></div>
+    </div>
+    <div id="questionArea">
+        <div style="text-align:center;padding:40px 0;color:#888;font-size:17px;">
+            「出題」ボタンを押して問題を生成してください
+        </div>
+    </div>
+    <div class="action-bar">
+        <div class="action-left">
+            <button class="btn btn-primary" id="generateBtn2">📄 出題</button>
+            <button class="btn" id="checkAllBtn2">📝 すべて判断</button>
+            <button class="btn" id="clearAllBtn2">🧹 解答消去</button>
+        </div>
+        <div><button class="btn" id="resetBtn">🔄 リセット</button></div>
+    </div>
+    <div class="footer-note">
+        ⚡ 出題基準：<a href="https://www.shuzan.jp/kentei/shuzan/kihon.html" target="_blank">日本珠算能力検定</a> に準拠 ·
+        見取算10題（加法6・減法4・補数1）・乗算20題・除算20題（除尽16・四捨五入4）<br>
+        ※ 乗算・除算は約半数が整数問題
+    </div>
+</div>
+
+<script>
+(function() {
+    'use strict';
+
+    // 级别配置
+    const LEVEL_CONFIG = {
+        1: { mitorizan: { digits: 10, terms: 10, count: 10 }, multiplication: { totalDigits: 11, count: 20 }, division: { totalDigits: 10, count: 20 } },
+        2: { mitorizan: { digits: 8, terms: 10, count: 10 }, multiplication: { totalDigits: 9, count: 20 }, division: { totalDigits: 8, count: 20 } },
+        3: { mitorizan: { digits: 6, terms: 10, count: 10 }, multiplication: { totalDigits: 7, count: 20 }, division: { totalDigits: 6, count: 20 } },
+        4: { mitorizan: { digits: 5, terms: 10, count: 10 }, multiplication: { totalDigits: 7, count: 20 }, division: { totalDigits: 6, count: 20 } },
+        5: { mitorizan: { digits: 4, terms: 10, count: 10 }, multiplication: { totalDigits: 6, count: 20 }, division: { totalDigits: 5, count: 20 } },
+        6: { mitorizan: { digits: 3, terms: 10, count: 10 }, multiplication: { totalDigits: 5, count: 20 }, division: { totalDigits: 4, count: 20 } }
+    };
+
+    function rand(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+
+    function randomNumber(digits) {
+        if (digits === 1) return rand(1, 9);
+        let first = rand(1, 9), rest = '';
+        for (let i = 1; i < digits; i++) rest += rand(0, 9);
+        return parseInt(first + rest, 10);
+    }
+
+    function randomDecimal(integerDigits, decimalDigits) {
+        let intPart = randomNumber(integerDigits);
+        if (decimalDigits === 0) return intPart;
+        let decPart = '';
+        for (let i = 0; i < decimalDigits; i++) {
+            if (i === decimalDigits - 1) {
+                decPart += rand(1, 9);
+            } else {
+                decPart += rand(0, 9);
+            }
+        }
+        return parseFloat(intPart + '.' + decPart);
+    }
+
+    function roundTo(value, decimals) {
+        const factor = Math.pow(10, decimals);
+        return Math.round(value * factor) / factor;
+    }
+
+    function formatNumber(num) {
+        if (num === undefined || num === null) return '';
+        if (Number.isInteger(num)) return num.toLocaleString('en-US');
+        let str = num.toFixed(6).replace(/\.?0+$/, '');
+        let parts = str.split('.');
+        let intPart = parts[0];
+        let decPart = parts[1] || '';
+        let formattedInt = parseInt(intPart).toLocaleString('en-US');
+        return decPart ? formattedInt + '.' + decPart : formattedInt;
+    }
+
+    // ===== 見取算 =====
+    function generateMitorizan(level, type) {
+        const cfg = LEVEL_CONFIG[level];
+        const digits = cfg.mitorizan.digits;
+        const terms = cfg.mitorizan.terms;
+        let numbers = [];
+        let total = 0;
+
+        if (type === 0) {
+            for (let i = 0; i < terms; i++) {
+                let num = randomNumber(digits);
+                numbers.push(num);
+                total += num;
+            }
+            if (total <= 0) return generateMitorizan(level, type);
+        } else {
+            let subCount = rand(3, Math.min(5, terms - 1));
+            let indices = [];
+            for (let i = 1; i < terms; i++) indices.push(i);
+            for (let i = indices.length - 1; i > 0; i--) {
+                const j = rand(0, i);
+                [indices[i], indices[j]] = [indices[j], indices[i]];
+            }
+            let subPositions = indices.slice(0, subCount);
+            let posNums = [];
+            for (let i = 0; i < terms; i++) posNums.push(randomNumber(digits));
+
+            if (type === 1) {
+                let cum = 0, ok = true;
+                for (let i = 0; i < terms; i++) {
+                    let val = posNums[i];
+                    if (subPositions.includes(i)) {
+                        if (cum <= val) { ok = false; break; }
+                        cum -= val;
+                    } else cum += val;
+                }
+                if (!ok || cum <= 0) return generateMitorizan(level, type);
+                numbers = posNums.map((v, i) => subPositions.includes(i) ? -v : v);
+                total = cum;
+            } else {
+                let cum = 0, found = false;
+                for (let i = 0; i < terms; i++) {
+                    let val = posNums[i];
+                    if (subPositions.includes(i)) {
+                        if (cum < val) found = true;
+                        cum -= val;
+                    } else cum += val;
+                }
+                if (!found || cum <= 0) return generateMitorizan(level, type);
+                numbers = posNums.map((v, i) => subPositions.includes(i) ? -v : v);
+                total = cum;
+            }
+        }
+
+        let termsArr = [];
+        for (let i = 0; i < numbers.length; i++) {
+            let val = numbers[i];
+            let sign = (i === 0) ? '' : (val < 0 ? '−' : '');
+            let absVal = Math.abs(val);
+            let formatted = formatNumber(absVal);
+            termsArr.push({ sign: sign, num: formatted });
+        }
+        return {
+            type: 'mitorizan',
+            typeLabel: '見取算',
+            terms: termsArr,
+            answer: total,
+            expressionText: termsArr.map(t => (t.sign ? t.sign + ' ' : '') + t.num).join(' ')
+        };
+    }
+
+    // ===== 乗算（一半整数，一半小数）=====
+    function generateMultiplication(level) {
+        const cfg = LEVEL_CONFIG[level];
+        const totalDigits = cfg.multiplication.totalDigits;
+        let digitsA = Math.floor(totalDigits / 2);
+        let digitsB = totalDigits - digitsA;
+        if (Math.abs(digitsA - digitsB) > 1) {
+            if (digitsA > digitsB) { digitsA--; digitsB++; }
+            else { digitsA++; digitsB--; }
+        }
+
+        const isInteger = Math.random() < 0.5;
+        let a, b;
+        if (isInteger) {
+            a = randomNumber(digitsA);
+            b = randomNumber(digitsB);
+        } else {
+            let intA = rand(1, digitsA - 1);
+            let decA = digitsA - intA;
+            a = randomDecimal(intA, decA);
+            let intB = rand(1, digitsB - 1);
+            let decB = digitsB - intB;
+            b = randomDecimal(intB, decB);
+        }
+        if (Math.random() < 0.5) {
+            [a, b] = [b, a];
+        }
+        let answer = a * b;
+        if (!Number.isInteger(answer)) answer = roundTo(answer, 2);
+        return {
+            type: 'multiplication',
+            typeLabel: '乗算',
+            expressionText: formatNumber(a) + ' × ' + formatNumber(b),
+            answer: answer
+        };
+    }
+
+    // ===== 除算（一半整数，一半小数）=====
+    function generateDivision(level, needRound) {
+        const cfg = LEVEL_CONFIG[level];
+        const totalDigits = cfg.division.totalDigits;
+        let digitsDivisor = Math.floor(totalDigits / 2);
+        let digitsQuotient = totalDigits - digitsDivisor;
+        if (Math.abs(digitsDivisor - digitsQuotient) > 1) {
+            if (digitsDivisor > digitsQuotient) { digitsDivisor--; digitsQuotient++; }
+            else { digitsDivisor++; digitsQuotient--; }
+        }
+
+        const isInteger = Math.random() < 0.5;
+        let divisor, quotient, dividend;
+        let maxAttempts = 100;
+        while (maxAttempts-- > 0) {
+            if (isInteger) {
+                divisor = randomNumber(digitsDivisor);
+                quotient = randomNumber(digitsQuotient);
+            } else {
+                let intD = rand(1, digitsDivisor - 1);
+                let decD = digitsDivisor - intD;
+                divisor = randomDecimal(intD, decD);
+                let intQ = rand(1, digitsQuotient - 1);
+                let decQ = digitsQuotient - intQ;
+                quotient = randomDecimal(intQ, decQ);
+            }
+            if (divisor === 0) continue;
+            if (needRound) {
+                let dividendInt = randomNumber(digitsDivisor + digitsQuotient);
+                let quotientCalc = dividendInt / divisor;
+                let isTerminating = false;
+                if (Number.isInteger(quotientCalc)) isTerminating = true;
+                else {
+                    let str = quotientCalc.toFixed(10);
+                    let decimalPart = str.split('.')[1] || '';
+                    if (decimalPart.length <= 2 || /^0+$/.test(decimalPart)) isTerminating = true;
+                }
+                if (!isTerminating) {
+                    dividend = dividendInt;
+                    quotient = roundTo(quotientCalc, 2);
+                    break;
+                }
+            } else {
+                dividend = quotient * divisor;
+                break;
+            }
+        }
+        if (maxAttempts <= 0) {
+            if (isInteger) {
+                divisor = randomNumber(digitsDivisor);
+                quotient = randomNumber(digitsQuotient);
+                if (divisor === 0) divisor = 1;
+                dividend = quotient * divisor;
+            } else {
+                let intD = rand(1, digitsDivisor - 1);
+                let decD = digitsDivisor - intD;
+                divisor = randomDecimal(intD, decD);
+                let intQ = rand(1, digitsQuotient - 1);
+                let decQ = digitsQuotient - intQ;
+                quotient = randomDecimal(intQ, decQ);
+                if (needRound) {
+                    let frac = rand(1, 99) / 100;
+                    quotient = quotient + frac;
+                    dividend = quotient * divisor;
+                    quotient = roundTo(quotient, 2);
+                } else {
+                    dividend = quotient * divisor;
+                }
+            }
+        }
+        if (!Number.isInteger(dividend)) dividend = roundTo(dividend, 2);
+        if (!Number.isInteger(quotient)) quotient = roundTo(quotient, 2);
+        if (!Number.isInteger(divisor)) divisor = roundTo(divisor, 2);
+        dividend = quotient * divisor;
+        if (!Number.isInteger(dividend)) dividend = roundTo(dividend, 2);
+
+        return {
+            type: 'division',
+            typeLabel: '除算',
+            expressionText: formatNumber(dividend) + ' ÷ ' + formatNumber(divisor),
+            answer: quotient
+        };
+    }
+
+    // ===== 生成完整试卷 =====
+    function generateExam(level) {
+        let mitorizanQuestions = [];
+        for (let i = 0; i < 6; i++) mitorizanQuestions.push(generateMitorizan(level, 0));
+        for (let i = 0; i < 3; i++) mitorizanQuestions.push(generateMitorizan(level, 1));
+        mitorizanQuestions.push(generateMitorizan(level, 2));
+        for (let i = mitorizanQuestions.length - 1; i > 0; i--) {
+            const j = rand(0, i);
+            [mitorizanQuestions[i], mitorizanQuestions[j]] = [mitorizanQuestions[j], mitorizanQuestions[i]];
+        }
+
+        let questions = [];
+        questions.push(...mitorizanQuestions);
+        for (let i = 0; i < 20; i++) questions.push(generateMultiplication(level));
+        for (let i = 0; i < 16; i++) questions.push(generateDivision(level, false));
+        for (let i = 0; i < 4; i++) questions.push(generateDivision(level, true));
+
+        return questions.map((q, index) => ({
+            ...q,
+            id: 'q_' + Date.now() + '_' + index + '_' + Math.random().toString(36).substr(2, 6),
+            userAnswer: null,
+            isCorrect: null
+        }));
+    }
+
+    // ----- DOM 操作 -----
+    const levelSelect = document.getElementById('levelSelect');
+    const levelDisplay = document.getElementById('levelDisplay');
+    const questionArea = document.getElementById('questionArea');
+    const totalCountSpan = document.getElementById('totalCount');
+    const correctCountSpan = document.getElementById('correctCount');
+    const wrongCountSpan = document.getElementById('wrongCount');
+    const accuracySpan = document.getElementById('accuracy');
+    let currentQuestions = [];
+    let nextFocusId = null;
+
+    function renderExam() {
+        if (!currentQuestions || currentQuestions.length === 0) {
+            questionArea.innerHTML = `<div style="text-align:center;padding:40px 0;color:#888;font-size:17px;">「出題」ボタンを押して問題を生成してください</div>`;
+            updateStats();
+            return;
+        }
+
+        const mitorizanQs = currentQuestions.filter(q => q.type === 'mitorizan');
+        const multiQs = currentQuestions.filter(q => q.type === 'multiplication');
+        const divQs = currentQuestions.filter(q => q.type === 'division');
+
+        let html = `<div class="exam-grid">`;
+
+        // 見取算
+        html += `<div class="section-mitorizan"><div class="section-title">A みとり算 <small>(10題・各10口)</small></div><div class="mitorizan-grid">`;
+        mitorizanQs.forEach((q, idx) => {
+            let statusClass = '', statusText = '';
+            if (q.isCorrect === true) { statusClass = 'correct'; statusText = '✅ 正解'; }
+            else if (q.isCorrect === false) { statusClass = 'wrong'; statusText = '❌ 誤り (正解: ' + formatNumber(q.answer) + ')'; }
+            let termsHtml = '';
+            q.terms.forEach((t) => {
+                let signDisplay = t.sign ? t.sign : '';
+                termsHtml += `<div class="term"><span class="sign">${signDisplay}</span><span class="num">${t.num}</span></div>`;
+            });
+            html += `
+                <div class="mitorizan-item ${statusClass}" data-id="${q.id}">
+                    <div class="q-label">№${idx + 1}</div>
+                    <div class="vertical-terms">${termsHtml}<div class="line"></div></div>
+                    <div class="answer-row">
+                        <span class="q-result">${statusText}</span>
+                        <input class="q-input" type="text" placeholder="" data-id="${q.id}" value="${q.userAnswer !== null ? q.userAnswer : ''}">
+                    </div>
+                </div>
+            `;
+        });
+        html += `</div></div>`;
+
+        // 乘除包裹在 calc-wrapper 中
+        html += `<div class="calc-wrapper">`;
+        // 乘法
+        html += `<div class="section-calc"><div class="section-title">B かけ算 <small>(20題)</small></div><div class="calc-list">`;
+        multiQs.forEach((q, idx) => {
+            let statusClass = '', statusText = '';
+            if (q.isCorrect === true) { statusClass = 'correct'; statusText = '✅ 正解'; }
+            else if (q.isCorrect === false) { statusClass = 'wrong'; statusText = '❌ 誤り (正解: ' + formatNumber(q.answer) + ')'; }
+            html += `
+                <div class="calc-item ${statusClass}" data-id="${q.id}">
+                    <span class="q-label">${idx + 1}.</span>
+                    <span class="q-expression">${q.expressionText} =</span>
+                    <input class="q-input" type="text" placeholder="" data-id="${q.id}" value="${q.userAnswer !== null ? q.userAnswer : ''}">
+                    <span class="q-result">${statusText}</span>
+                </div>
+            `;
+        });
+        html += `</div></div>`;
+
+        // 除法
+        html += `<div class="section-calc"><div class="section-title">C わり算 <small>(20題)</small></div><div class="calc-list">`;
+        divQs.forEach((q, idx) => {
+            let statusClass = '', statusText = '';
+            if (q.isCorrect === true) { statusClass = 'correct'; statusText = '✅ 正解'; }
+            else if (q.isCorrect === false) { statusClass = 'wrong'; statusText = '❌ 誤り (正解: ' + formatNumber(q.answer) + ')'; }
+            html += `
+                <div class="calc-item ${statusClass}" data-id="${q.id}">
+                    <span class="q-label">${idx + 1}.</span>
+                    <span class="q-expression">${q.expressionText} =</span>
+                    <input class="q-input" type="text" placeholder="" data-id="${q.id}" value="${q.userAnswer !== null ? q.userAnswer : ''}">
+                    <span class="q-result">${statusText}</span>
+                </div>
+            `;
+        });
+        html += `</div></div>`;
+
+        html += `</div>`; // calc-wrapper 结束
+        html += `</div>`; // exam-grid 结束
+
+        questionArea.innerHTML = html;
+
+        // 绑定事件
+        const allInputs = document.querySelectorAll('.q-input');
+        allInputs.forEach((input, index) => {
+            input.addEventListener('input', function() {
+                const id = this.dataset.id;
+                const question = currentQuestions.find(q => q.id === id);
+                if (question) {
+                    const raw = this.value.trim();
+                    question.userAnswer = raw === '' ? null : raw;
+                    if (question.isCorrect !== null) {
+                        question.isCorrect = null;
+                        renderExam();
+                    }
+                }
+            });
+
+            input.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    e.preventDefault();
+                    const id = this.dataset.id;
+                    const question = currentQuestions.find(q => q.id === id);
+                    if (!question) return;
+
+                    const raw = this.value.trim();
+                    if (raw === '') {
+                        alert('解答を入力してください');
+                        return;
+                    }
+                    const userAns = parseFloat(raw);
+                    if (isNaN(userAns)) {
+                        alert('有効な数字を入力してください');
+                        return;
+                    }
+                    const diff = Math.abs(userAns - question.answer);
+                    question.isCorrect = diff < 0.001;
+
+                    const all = document.querySelectorAll('.q-input');
+                    let nextIdx = -1;
+                    for (let i = 0; i < all.length; i++) {
+                        if (all[i] === this) {
+                            nextIdx = i + 1;
+                            break;
+                        }
+                    }
+                    if (nextIdx < all.length) {
+                        nextFocusId = all[nextIdx].dataset.id;
+                    } else {
+                        nextFocusId = null;
+                    }
+
+                    renderExam();
+
+                    if (nextFocusId) {
+                        const nextInput = document.querySelector(`.q-input[data-id="${nextFocusId}"]`);
+                        if (nextInput) {
+                            nextInput.focus();
+                            nextInput.select();
+                        }
+                        nextFocusId = null;
+                    }
+                }
+            });
+        });
+
+        updateStats();
+        levelDisplay.textContent = levelSelect.value + ' 級';
+    }
+
+    function updateStats() {
+        const total = currentQuestions.length;
+        let correct = 0, wrong = 0;
+        currentQuestions.forEach(q => {
+            if (q.isCorrect === true) correct++;
+            else if (q.isCorrect === false) wrong++;
+        });
+        totalCountSpan.textContent = total;
+        correctCountSpan.textContent = correct;
+        wrongCountSpan.textContent = wrong;
+        const checked = correct + wrong;
+        accuracySpan.textContent = checked === 0 ? '—' : Math.round((correct / checked) * 100) + '%';
+    }
+
+    function generateNewExam() {
+        const level = parseInt(levelSelect.value, 10);
+        currentQuestions = generateExam(level);
+        renderExam();
+    }
+
+    function checkAll() {
+        let hasEmpty = false;
+        currentQuestions.forEach(q => {
+            if (q.userAnswer === null || q.userAnswer === '') { hasEmpty = true; return; }
+            const userAns = parseFloat(q.userAnswer);
+            if (isNaN(userAns)) { hasEmpty = true; return; }
+            const diff = Math.abs(userAns - q.answer);
+            q.isCorrect = diff < 0.001;
+        });
+        if (hasEmpty) alert('未解答の問題があります。すべて入力してから判断してください。');
+        renderExam();
+    }
+
+    function clearAllAnswers() {
+        currentQuestions.forEach(q => { q.userAnswer = null; q.isCorrect = null; });
+        renderExam();
+    }
+
+    function resetAll() { generateNewExam(); }
+
+    document.getElementById('generateBtn').addEventListener('click', generateNewExam);
+    document.getElementById('generateBtn2').addEventListener('click', generateNewExam);
+    document.getElementById('resetBtn').addEventListener('click', resetAll);
+    document.getElementById('checkAllBtn').addEventListener('click', checkAll);
+    document.getElementById('checkAllBtn2').addEventListener('click', checkAll);
+    document.getElementById('clearAllBtn').addEventListener('click', clearAllAnswers);
+    document.getElementById('clearAllBtn2').addEventListener('click', clearAllAnswers);
+    levelSelect.addEventListener('change', generateNewExam);
+
+    generateNewExam();
+})();
+</script>
+</body>
+</html>
