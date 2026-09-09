@@ -1,0 +1,1542 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Abacus State Player</title>
+<style>
+body { margin:0; background:#fff; font-family:sans-serif; text-align:center; }
+#container { margin:auto; width:fit-content; }
+#programBox { margin:12px auto; }
+#program { width:560px; max-width:90vw; font-family:monospace; font-size:15px; }
+#programStatus { margin-left:8px; font-family:monospace; }
+#abacus { display:block; background:white; padding:100px; }
+#controls { margin-top:15px; }
+button { margin:3px; padding:6px 14px; font-size:16px; }
+input[type="range"] { width:150px; vertical-align:middle; }
+#info { margin-top:10px; font-family:monospace; font-size:18px; }
+</style>
+</head>
+<body>
+<div id="container">
+    <div id="programBox">
+        <textarea id="program" rows="3" cols="70">% 1 2 +3 +4e0-1-2 -3 +11051e1=4e3 =000</textarea><br>
+        <button onclick="loadProgram()">载入指令</button>
+        <span id="programStatus"></span>
+    </div>
+    <svg id="abacus"></svg>
+    <div id="controls">
+        <button onclick="player.first()">⏮</button>
+        <button onclick="player.previous()">⏪</button>
+        <button onclick="player.toggle()">▶ / ⏸</button>
+        <button onclick="player.next()">⏩</button>
+        <button onclick="player.last()">⏭</button>
+        <br>
+        <label>
+            速度：
+            <input id="speed" type="range" min="0.1" max="10" step="0.1" value="1">
+            <span id="speedText">1.0×</span>
+        </label>
+    </div>
+    <div id="info"></div>
+</div>
+
+<script>
+const CONFIG = {
+    beadPoints:
+        "12.5,25 " +
+        "42.5,0 " +
+        "12.5,-25 " +
+        "-12.5,-25 " +
+        "-42.5,0 " +
+        "-12.5,25",
+    rodSpacing:90,
+    firstRodX:50,
+    frameWidth:25,
+    topFrameY:0,
+    beamY:125,
+    upperY:50,
+    lowerY:175,
+    beadSpacing:50,
+    height:410,
+    awayColor:"silver",
+    nearColor:"black",
+    activeColor:"red",
+    rodWidth:10,
+    animationDuration:300,
+    colorFadeDuration:2200,
+    compoundOverlap:0.70,
+    operationEndPause:1200,
+    digitFontSize:27,
+    digitColor:"black",
+    digitY:394
+};
+
+function svgElement(name,attributes={}) {
+    const e=document.createElementNS("http://www.w3.org/2000/svg",name);
+    for(const [key,value] of Object.entries(attributes)) e.setAttribute(key,value);
+    return e;
+}
+
+function digitToBeads(value) {
+    value=Number(value);
+    if(value<0||value>9||!Number.isInteger(value)) throw new Error("算盘每一档的数字必须是 0~9");
+    return value>=5?{upper:true,lower:value-5}:{upper:false,lower:value};
+}
+
+function digitFromBeads(upper,lower) {
+    return (upper?5:0)+lower;
+}
+
+function interpolateColor(from,to,t) {
+    const colors={
+        red:[255,0,0],
+        black:[0,0,0],
+        grey:[128,128,128],
+        silver:[184,184,184]
+    };
+    const a=colors[from],b=colors[to];
+    if(!a||!b)return to;
+    const r=Math.round(a[0]+(b[0]-a[0])*t);
+    const g=Math.round(a[1]+(b[1]-a[1])*t);
+    const bl=Math.round(a[2]+(b[2]-a[2])*t);
+    return `rgb(${r},${g},${bl})`;
+}
+
+const audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+let lastClickTime=-Infinity;
+
+function playClickSound() {
+    if(document.hidden)return;
+    const now=performance.now();
+    if(now-lastClickTime<20)return;
+    lastClickTime=now;
+    try {
+        if(audioCtx.state==="suspended")audioCtx.resume();
+        const oscillator=audioCtx.createOscillator();
+        const gainNode=audioCtx.createGain();
+        oscillator.type="sine";
+        oscillator.frequency.value=700;
+        const t=audioCtx.currentTime;
+        gainNode.gain.setValueAtTime(0.1,t);
+        gainNode.gain.exponentialRampToValueAtTime(0.001,t+0.08);
+        oscillator.connect(gainNode);
+        gainNode.connect(audioCtx.destination);
+        oscillator.start(t);
+        oscillator.stop(t+0.08);
+        oscillator.onended=()=>{
+            oscillator.disconnect();
+            gainNode.disconnect();
+        };
+    } catch(e){}
+}
+
+class Bead {
+    constructor(rod,bead) {
+        this.rod=rod;
+        this.bead=bead;
+        this.x=CONFIG.firstRodX+rod*CONFIG.rodSpacing;
+        this.isUpper=bead===5;
+        this.motionAnimation=null;
+        this.fadeAnimation=null;
+
+        if(this.isUpper) {
+            this.yAway=CONFIG.upperY;
+            this.yNear=CONFIG.upperY+25;
+        } else {
+            this.yAway=CONFIG.lowerY+(bead-1)*CONFIG.beadSpacing;
+            this.yNear=this.yAway-25;
+        }
+
+        this.currentY=this.yAway;
+
+        this.element=svgElement("polygon",{
+            points:CONFIG.beadPoints,
+            id:`r${rod+1}b${bead}`,
+            fill:CONFIG.awayColor
+        });
+
+        this.setY(this.yAway);
+        this.element.title=`第 ${rod+1} 档，第 ${bead} 珠`;
+    }
+
+    setY(y) {
+        this.currentY=y;
+        this.element.setAttribute("transform",`translate(${this.x},${y})`);
+    }
+
+    setColor(color) {
+        this.element.setAttribute("fill",color);
+    }
+
+    stopAnimation() {
+        if(this.motionAnimation!==null) {
+            cancelAnimationFrame(this.motionAnimation);
+            this.motionAnimation=null;
+        }
+        if(this.fadeAnimation!==null) {
+            cancelAnimationFrame(this.fadeAnimation);
+            this.fadeAnimation=null;
+        }
+    }
+}
+
+class DigitLabel {
+    constructor(rod,x) {
+        this.rod=rod;
+        this.value=0;
+        this.fadeAnimation=null;
+
+        this.element=svgElement("text",{
+            x,
+            y:CONFIG.digitY,
+            "text-anchor":"middle",
+            "dominant-baseline":"middle",
+            "font-size":CONFIG.digitFontSize,
+            "font-family":"sans-serif",
+            "font-weight":"bold",
+            fill:CONFIG.digitColor,
+            id:`digit${rod+1}`
+        });
+
+        this.element.textContent="0";
+    }
+
+    setValue(value) {
+        this.value=Number(value);
+        this.element.textContent=this.value;
+    }
+
+    setColor(color) {
+        this.element.setAttribute("fill",color);
+    }
+
+    stopAnimation() {
+        if(this.fadeAnimation!==null) {
+            cancelAnimationFrame(this.fadeAnimation);
+            this.fadeAnimation=null;
+        }
+    }
+
+    activate(value) {
+        this.stopAnimation();
+        this.setValue(value);
+        this.setColor(CONFIG.activeColor);
+    }
+
+    fadeToBlack(speed) {
+        this.stopAnimation();
+        const startTime=performance.now();
+        const duration=CONFIG.colorFadeDuration/speed;
+
+        const animate=time=>{
+            const t=Math.min(1,(time-startTime)/duration);
+            const p=t*t*(3-2*t);
+            this.setColor(interpolateColor(CONFIG.activeColor,CONFIG.digitColor,p));
+
+            if(t<1) {
+                this.fadeAnimation=requestAnimationFrame(animate);
+            } else {
+                this.fadeAnimation=null;
+                this.setColor(CONFIG.digitColor);
+            }
+        };
+
+        this.fadeAnimation=requestAnimationFrame(animate);
+    }
+}
+
+class Abacus {
+    /* state[0] 是最右档；state[unitIndex] 是 e0 个位。 */
+    constructor(digits,unitIndex=0) {
+        this.digits=digits;
+        this.unitIndex=unitIndex;
+        this.beads=[];
+        this.digitLabels=[];
+        this.createSVG();
+    }
+
+    createSVG() {
+        const svg=document.getElementById("abacus");
+        svg.innerHTML="";
+
+        const width=
+            CONFIG.firstRodX+
+            (this.digits-0.75)*CONFIG.rodSpacing+
+            CONFIG.frameWidth;
+
+        svg.setAttribute("width",width);
+        svg.setAttribute("height",CONFIG.height);
+        svg.setAttribute("viewBox",`0 0 ${width} ${CONFIG.height}`);
+
+        const topFrame=svgElement("rect",{
+            x:0,y:CONFIG.topFrameY,
+            width,height:CONFIG.frameWidth,
+            fill:CONFIG.awayColor
+        });
+        svg.appendChild(topFrame);
+
+        const bottomFrameY=350;
+        const bottomFrame=svgElement("rect",{
+            x:0,y:bottomFrameY,
+            width,height:CONFIG.frameWidth,
+            fill:CONFIG.awayColor
+        });
+        svg.appendChild(bottomFrame);
+
+        const rodHalfWidth=CONFIG.rodWidth/2;
+
+        for(let rod=0;rod<this.digits;rod++) {
+            const x=CONFIG.firstRodX+rod*CONFIG.rodSpacing;
+            const line=svgElement("line",{
+                x1:x,
+                y1:CONFIG.frameWidth+rodHalfWidth,
+                x2:x,
+                y2:bottomFrameY-rodHalfWidth,
+                stroke:CONFIG.awayColor,
+                "stroke-width":CONFIG.rodWidth,
+                "stroke-linecap":"round"
+            });
+            svg.appendChild(line);
+        }
+
+        const beam=svgElement("rect",{
+            x:0,
+            y:CONFIG.beamY-25,
+            width,
+            height:25,
+            fill:"black"
+        });
+        svg.appendChild(beam);
+
+        const markStart=this.digits-1-this.unitIndex;
+        const markInterval=3;
+
+        for(let rod=0;rod<this.digits;rod++) {
+            if((rod-markStart)%markInterval===0) {
+                const x=CONFIG.firstRodX+rod*CONFIG.rodSpacing;
+                const y=CONFIG.beamY-12.5;
+                const circle=svgElement("circle",{
+                    cx:x,cy:y,r:6,
+                    fill:"#eee",
+                    stroke:"none"
+                });
+                svg.appendChild(circle);
+            }
+        }
+
+        for(let rod=0;rod<this.digits;rod++) {
+            const group=svgElement("g",{id:`rod${rod+1}`});
+
+            const upper=new Bead(rod,5);
+            group.appendChild(upper.element);
+            this.beads.push(upper);
+
+            for(let bead=1;bead<=4;bead++) {
+                const lower=new Bead(rod,bead);
+                group.appendChild(lower.element);
+                this.beads.push(lower);
+            }
+
+            svg.appendChild(group);
+        }
+
+        for(let rod=0;rod<this.digits;rod++) {
+            const x=CONFIG.firstRodX+rod*CONFIG.rodSpacing;
+            const label=new DigitLabel(rod,x);
+            svg.appendChild(label.element);
+            this.digitLabels.push(label);
+        }
+    }
+
+    getBead(rod,bead) {
+        return this.beads.find(b=>b.rod===rod&&b.bead===bead);
+    }
+
+    logicalRod(index) {
+        return this.digits-1-index;
+    }
+
+    getLogicalBead(index,bead) {
+        return this.getBead(this.logicalRod(index),bead);
+    }
+
+    getLogicalLabel(index) {
+        return this.digitLabels[this.logicalRod(index)];
+    }
+
+    stopAllAnimations() {
+        for(const bead of this.beads)bead.stopAnimation();
+        for(const label of this.digitLabels) {
+            label.stopAnimation();
+            label.setColor(CONFIG.digitColor);
+        }
+    }
+
+    setState(state) {
+        for(let rod=0;rod<this.digits;rod++) {
+            const index=this.digits-1-rod;
+            const beadState=digitToBeads(state[index]);
+
+            const upper=this.getBead(rod,5);
+            upper.stopAnimation();
+            upper.setY(beadState.upper?upper.yNear:upper.yAway);
+            upper.setColor(beadState.upper?CONFIG.nearColor:CONFIG.awayColor);
+
+            for(let bead=1;bead<=4;bead++) {
+                const b=this.getBead(rod,bead);
+                b.stopAnimation();
+                const near=bead<=beadState.lower;
+                b.setY(near?b.yNear:b.yAway);
+                b.setColor(near?CONFIG.nearColor:CONFIG.awayColor);
+            }
+
+            const label=this.digitLabels[rod];
+            label.stopAnimation();
+            label.setValue(state[index]);
+            label.setColor(CONFIG.digitColor);
+        }
+    }
+
+    setDigits(state) {
+        for(let rod=0;rod<this.digits;rod++) {
+            const index=this.digits-1-rod;
+            const label=this.digitLabels[rod];
+            label.stopAnimation();
+            label.setValue(state[index]);
+            label.setColor(CONFIG.digitColor);
+        }
+    }
+}
+
+class Player {
+    constructor(abacus,commands) {
+        this.abacus=abacus;
+        this.commands=commands;
+        this.index=0;
+        this.playing=false;
+        this.busy=false;
+        this.timer=null;
+        this.speed=1;
+        this.cancelToken=0;
+        this._endPauseTimer=null;
+        this._endPauseResolve=null;
+
+        const initial=this.getInitialState();
+        this.state=initial.map(digitToBeads);
+        this.abacus.setState(initial);
+        this.updateInfo();
+    }
+
+    getInitialState() {
+        const first=this.commands.find(c=>c.type==="state");
+        if(!first)throw new Error("commands 中必须包含至少一个 state");
+        return [...first.state];
+    }
+
+    getDigits() {
+        return this.state.map(s=>digitFromBeads(s.upper,s.lower));
+    }
+
+    sleep(milliseconds,token) {
+        return new Promise(resolve=>{
+            setTimeout(()=>resolve(token===this.cancelToken),milliseconds);
+        });
+    }
+
+    async next() {
+        if(this.busy)return;
+        if(this.index>=this.commands.length-1) {
+            this.finishPlayback();
+            return;
+        }
+
+        this.index++;
+        const command=this.commands[this.index];
+        const token=this.cancelToken;
+        this.busy=true;
+        let completed=true;
+
+        try {
+            if(command.type==="state") {
+                completed=await this.animateTransition(this.getDigits(),[...command.state],true,token);
+            } else if(command.type==="add") {
+                completed=await this.runNumberAdd(command.value,command.position??0,token);
+            } else if(command.type==="subtract") {
+                completed=await this.runNumberSubtract(command.value,command.position??0,token);
+            } else {
+                throw new Error(`未知命令：${command.type}`);
+            }
+        } catch(err) {
+            console.error("执行指令时出错:",err);
+            this.busy=false;
+            this.playing=false;
+            this.updateInfo();
+            return;
+        }
+
+        if(!completed) {
+            this.busy=false;
+            return;
+        }
+
+        const endPauseMs=CONFIG.operationEndPause/this.speed;
+
+        await new Promise(resolve=>{
+            this._endPauseResolve=resolve;
+            this._endPauseTimer=setTimeout(()=>{
+                this._endPauseTimer=null;
+                this._endPauseResolve=null;
+                resolve(true);
+            },endPauseMs);
+        });
+
+        this.busy=false;
+
+        if(!this.playing) {
+            this.updateInfo();
+            return;
+        }
+
+        this.updateInfo();
+
+        if(this.playing) {
+            if(this.index<this.commands.length-1)this.next();
+            else this.finishPlayback();
+        }
+    }
+
+    pause() {
+        this.playing=false;
+        clearTimeout(this.timer);
+        this.timer=null;
+
+        if(this._endPauseResolve) {
+            this._endPauseResolve(false);
+            this._endPauseResolve=null;
+        }
+
+        if(this._endPauseTimer) {
+            clearTimeout(this._endPauseTimer);
+            this._endPauseTimer=null;
+        }
+
+        this.cancelToken++;
+        this.abacus.stopAllAnimations();
+        this.busy=false;
+    }
+
+    previous() {
+        this.pause();
+        if(this.index<=0)return;
+        this.index--;
+        this.rebuildTo(this.index);
+    }
+
+    first() {
+        this.pause();
+        this.index=0;
+        this.rebuildTo(0);
+    }
+
+    last() {
+        this.pause();
+        this.index=this.commands.length-1;
+        this.rebuildTo(this.index);
+    }
+
+    toggle() {
+        if(this.playing)this.pause();
+        else this.play();
+    }
+
+    play() {
+        if(this.index>=this.commands.length-1)this.first();
+        this.playing=true;
+        this.next();
+    }
+
+    finishPlayback() {
+        this.playing=false;
+        clearTimeout(this.timer);
+        this.timer=null;
+    }
+
+    rebuildTo(targetIndex) {
+        const initial=this.getInitialState();
+        let state=[...initial];
+
+        for(let i=1;i<=targetIndex;i++) {
+            const command=this.commands[i];
+
+            if(command.type==="state") {
+                state=[...command.state];
+            } else if(command.type==="add") {
+                state=this.buildNumberPlan(state,"add",command.value,command.position??0).finalState;
+            } else if(command.type==="subtract") {
+                state=this.buildNumberPlan(state,"subtract",command.value,command.position??0).finalState;
+            }
+        }
+
+        this.state=state.map(digitToBeads);
+        this.abacus.setState(state);
+        this.updateInfo();
+    }
+
+    updateDigit(rod,value) {
+        const label=this.abacus.getLogicalLabel(rod);
+        label.activate(value);
+        label.fadeToBlack(this.speed);
+    }
+
+    activateDigitFromState(rod) {
+        const beadState=this.state[rod];
+        this.updateDigit(
+            rod,
+            digitFromBeads(beadState.upper,beadState.lower)
+        );
+    }
+
+    animateTransition(oldDigits,newDigits,updateDigits,token) {
+        if(token!==this.cancelToken)return Promise.resolve(false);
+
+        const oldState=oldDigits.map(digitToBeads);
+        const newState=newDigits.map(digitToBeads);
+        let hasMovement=false;
+
+        for(let rod=0;rod<this.abacus.digits;rod++) {
+            const old=oldState[rod];
+            const target=newState[rod];
+
+            if(old.upper!==target.upper) {
+                hasMovement=true;
+                this.state[rod].upper=target.upper;
+
+                if(updateDigits)this.activateDigitFromState(rod);
+
+                const bead=this.abacus.getLogicalBead(rod,5);
+
+                this.animateBead(
+                    bead,
+                    target.upper?bead.yNear:bead.yAway,
+                    target.upper?CONFIG.nearColor:CONFIG.awayColor
+                );
+            }
+
+            for(let beadNumber=1;beadNumber<=4;beadNumber++) {
+                const oldNear=beadNumber<=old.lower;
+                const targetNear=beadNumber<=target.lower;
+
+                if(oldNear===targetNear)continue;
+
+                hasMovement=true;
+
+                this.state[rod].lower=targetNear
+                    ? this.state[rod].lower+1
+                    : this.state[rod].lower-1;
+
+                if(updateDigits)this.activateDigitFromState(rod);
+
+                const bead=this.abacus.getLogicalBead(rod,beadNumber);
+
+                this.animateBead(
+                    bead,
+                    targetNear?bead.yNear:bead.yAway,
+                    targetNear?CONFIG.nearColor:CONFIG.awayColor
+                );
+            }
+        }
+
+        if(!hasMovement)return Promise.resolve(true);
+
+        return this.sleep(
+            CONFIG.animationDuration/this.speed,
+            token
+        );
+    }
+
+    buildCompound(initialDigits,operation,index,value) {
+        if(!Number.isInteger(value)||value<1||value>9)throw new Error("value 必须是 1~9");
+        if(!Number.isInteger(index)||index<0||index>=this.abacus.digits)throw new Error("数位超出算盘范围");
+        const working=[...initialDigits];
+        const steps=[];
+
+        if(operation==="add")this.buildAddSteps(working,index,value,steps);
+        else this.buildSubtractSteps(working,index,value,steps);
+
+        return steps;
+    }
+
+    buildAddSteps(state,index,value,steps) {
+        const d=state[index];
+
+        if(d+value<10) {
+            if(d<5&&value<5&&d+value>=5) {
+                const complement=5-value;
+                state[index]+=5;
+                steps.push([...state]);
+                state[index]-=complement;
+                steps.push([...state]);
+            } else {
+                state[index]+=value;
+                steps.push([...state]);
+            }
+            return;
+        }
+
+        if(value<=4) {
+            state[index]-=10-value;
+            steps.push([...state]);
+            this.carryOne(state,index+1,steps);
+            return;
+        }
+
+        if(value===5) {
+            state[index]-=5;
+            steps.push([...state]);
+            this.carryOne(state,index+1,steps);
+            return;
+        }
+
+        const complement=10-value;
+
+        if(d<5&&d>=complement) {
+            state[index]-=complement;
+            steps.push([...state]);
+            this.carryOne(state,index+1,steps);
+            return;
+        }
+
+        const firstAdd=value-5;
+
+        if(d>=5&&d+firstAdd<=9) {
+            state[index]+=firstAdd;
+            steps.push([...state]);
+            state[index]-=5;
+            steps.push([...state]);
+            this.carryOne(state,index+1,steps);
+            return;
+        }
+
+        state[index]-=complement;
+        steps.push([...state]);
+        this.carryOne(state,index+1,steps);
+    }
+
+    carryOne(state,index,steps) {
+        if(index>=state.length)throw new Error("算盘位数不足，无法进位");
+
+        if(state[index]<9) {
+            state[index]++;
+            steps.push([...state]);
+            return;
+        }
+
+        state[index]=0;
+        steps.push([...state]);
+        this.carryOne(state,index+1,steps);
+    }
+
+    buildSubtractSteps(state,index,value,steps) {
+        const d=state[index];
+
+        if(d>=value) {
+            if(d>=5&&value<5&&d-value<5) {
+                const complement=5-value;
+                state[index]+=complement;
+                steps.push([...state]);
+                state[index]-=5;
+                steps.push([...state]);
+            } else {
+                state[index]-=value;
+                steps.push([...state]);
+            }
+            return;
+        }
+
+        this.buildSubtractSteps(state,index+1,1,steps);
+        this.buildAddSteps(state,index,10-value,steps);
+    }
+
+    applyCompound(state,operation,index,value) {
+        const steps=this.buildCompound(state,operation,index,value);
+        return steps.length?[...steps[steps.length-1]]:[...state];
+    }
+
+    buildNumberPlan(initialDigits,operation,value,position=0) {
+        if(!Number.isInteger(value)||value<1)throw new Error(`${operation} 的 value 必须是正整数`);
+        if(!Number.isInteger(position)||position<0)throw new Error("数位必须是非负整数");
+
+        const ds=String(value).split("").map(Number);
+        if(position+ds.length>this.abacus.digits)throw new Error("操作数位数超过算盘位数");
+
+        let state=[...initialDigits];
+        const groups=[];
+
+        /* 动画按高位到低位进行；state 的较大 index 是更高位。 */
+        for(let j=0;j<ds.length;j++) {
+            const v=ds[j];
+            const rod=position+ds.length-1-j;
+
+            if(v===0)continue;
+
+            const steps=this.buildCompound(
+                state,
+                operation,
+                rod,
+                v
+            );
+
+            groups.push({
+                rod,
+                steps,
+                finalState:[...steps[steps.length-1]]
+            });
+
+            state=[...steps[steps.length-1]];
+        }
+
+        return {
+            groups,
+            finalState:state
+        };
+    }
+
+    async runNumberAdd(value,position,token) {
+        const initial=this.getDigits();
+        const plan=this.buildNumberPlan(initial,"add",value,position);
+        return this.runNumberPlan(plan,initial,token);
+    }
+
+    async runNumberSubtract(value,position,token) {
+        const initial=this.getDigits();
+        const plan=this.buildNumberPlan(initial,"subtract",value,position);
+        return this.runNumberPlan(plan,initial,token);
+    }
+
+    async runNumberPlan(plan,initial,token) {
+        let previousState=[...initial];
+
+        for(const group of plan.groups) {
+            if(token!==this.cancelToken)return false;
+
+            const firstStepForRod=Array(this.abacus.digits).fill(-1);
+            let before=[...previousState];
+
+            for(let i=0;i<group.steps.length;i++) {
+                const current=group.steps[i];
+
+                for(let rod=0;rod<this.abacus.digits;rod++) {
+                    if(firstStepForRod[rod]<0&&current[rod]!==before[rod]) {
+                        firstStepForRod[rod]=i;
+                    }
+                }
+
+                before=[...current];
+            }
+
+            let oldState=[...previousState];
+
+            for(let i=0;i<group.steps.length;i++) {
+                if(token!==this.cancelToken)return false;
+
+                const newState=group.steps[i];
+
+                for(let rod=0;rod<this.abacus.digits;rod++) {
+                    if(firstStepForRod[rod]!==i)continue;
+
+                    const label=this.abacus.getLogicalLabel(rod);
+                    label.activate(group.finalState[rod]);
+                    label.fadeToBlack(this.speed);
+                }
+
+                this.animateTransition(
+                    oldState,
+                    newState,
+                    false,
+                    token
+                );
+
+                oldState=[...newState];
+
+                if(i===group.steps.length-1) {
+                    if(!await this.sleep(
+                        CONFIG.animationDuration/this.speed,
+                        token
+                    ))return false;
+                } else {
+                    if(!await this.sleep(
+                        CONFIG.animationDuration*CONFIG.compoundOverlap/this.speed,
+                        token
+                    ))return false;
+                }
+            }
+
+            previousState=[...group.finalState];
+        }
+
+        this.state=plan.finalState.map(digitToBeads);
+        return true;
+    }
+
+    async runCompound(operation,digitNumber,value,token) {
+        for(const label of this.abacus.digitLabels) {
+            label.stopAnimation();
+            label.setColor(CONFIG.digitColor);
+        }
+
+        const initial=this.getDigits();
+        const steps=this.buildCompound(
+            initial,
+            operation,
+            digitNumber,
+            value
+        );
+
+        if(!steps.length)return true;
+
+        const finalState=[...steps[steps.length-1]];
+        const firstStepForRod=Array(this.abacus.digits).fill(-1);
+        let previous=[...initial];
+
+        for(let i=0;i<steps.length;i++) {
+            const current=steps[i];
+
+            for(let rod=0;rod<this.abacus.digits;rod++) {
+                if(current[rod]!==previous[rod]&&firstStepForRod[rod]<0) {
+                    firstStepForRod[rod]=i;
+                }
+            }
+
+            previous=[...current];
+        }
+
+        let oldState=[...initial];
+
+        for(let i=0;i<steps.length;i++) {
+            if(token!==this.cancelToken)return false;
+
+            const newState=steps[i];
+
+            for(let rod=0;rod<this.abacus.digits;rod++) {
+                if(firstStepForRod[rod]!==i)continue;
+
+                const label=this.abacus.getLogicalLabel(rod);
+                label.activate(finalState[rod]);
+                label.fadeToBlack(this.speed);
+            }
+
+            this.animateTransition(
+                oldState,
+                newState,
+                false,
+                token
+            );
+
+            oldState=[...newState];
+
+            if(i<steps.length-1) {
+                const delay=
+                    CONFIG.animationDuration*
+                    CONFIG.compoundOverlap/
+                    this.speed;
+
+                const valid=await this.sleep(
+                    delay,
+                    token
+                );
+
+                if(!valid)return false;
+            }
+        }
+
+        const finalValid=await this.sleep(
+            CONFIG.animationDuration/this.speed,
+            token
+        );
+
+        if(!finalValid)return false;
+
+        this.state=finalState.map(digitToBeads);
+        return true;
+    }
+
+    animateBead(bead,targetY,targetColor) {
+        bead.stopAnimation();
+
+        const startY=bead.currentY;
+        const startTime=performance.now();
+        const moveDuration=CONFIG.animationDuration/this.speed;
+
+        bead.setColor(CONFIG.activeColor);
+
+        const moveAnimation=time=>{
+            const t=Math.min(
+                1,
+                (time-startTime)/moveDuration
+            );
+
+            const p=t*t*t*(3-2*t);
+
+            bead.setY(
+                startY+
+                (targetY-startY)*p
+            );
+
+            bead.setColor(CONFIG.activeColor);
+
+            if(t<1) {
+                bead.motionAnimation=
+                    requestAnimationFrame(
+                        moveAnimation
+                    );
+            } else {
+                bead.motionAnimation=null;
+                bead.setY(targetY);
+                bead.setColor(CONFIG.activeColor);
+                playClickSound();
+                this.startColorFade(
+                    bead,
+                    targetColor
+                );
+            }
+        };
+
+        bead.motionAnimation=
+            requestAnimationFrame(
+                moveAnimation
+            );
+    }
+
+    startColorFade(bead,targetColor) {
+        if(bead.fadeAnimation!==null) {
+            cancelAnimationFrame(
+                bead.fadeAnimation
+            );
+            bead.fadeAnimation=null;
+        }
+
+        const startTime=performance.now();
+        const fadeDuration=
+            CONFIG.colorFadeDuration/
+            this.speed;
+
+        const fadeAnimation=time=>{
+            const t=Math.min(
+                1,
+                (time-startTime)/fadeDuration
+            );
+
+            const p=t*t*(3-2*t);
+
+            bead.setColor(
+                interpolateColor(
+                    CONFIG.activeColor,
+                    targetColor,
+                    p
+                )
+            );
+
+            if(t<1) {
+                bead.fadeAnimation=
+                    requestAnimationFrame(
+                        fadeAnimation
+                    );
+            } else {
+                bead.fadeAnimation=null;
+                bead.setColor(targetColor);
+            }
+        };
+
+        bead.fadeAnimation=
+            requestAnimationFrame(
+                fadeAnimation
+            );
+    }
+
+    setSpeed(speed) {
+        this.speed=Number(speed);
+        document.getElementById("speedText").textContent=
+            `${this.speed.toFixed(1)}×`;
+    }
+
+    updateInfo() {
+        document.getElementById("info").textContent=
+            `Step ${this.index+1} / ${this.commands.length}`;
+    }
+}
+
+
+/* =========================================================
+ * 字符串指令解释器
+ * =========================================================
+ *
+ * 支持：
+ *
+ *   +23e0
+ *   -3e0
+ *   23
+ *   2.3e3
+ *   -2.3e3
+ *   =45e3
+ *   =000
+ *   %
+ *
+ * e0 = 个位
+ * e1 = 十位
+ * e2 = 百位
+ *
+ * =45e3：
+ *
+ *   e4 = 4
+ *   e3 = 5
+ *
+ * 未出现的数位保持不变。
+ * ========================================================= */
+
+function tokenizeProgram(text) {
+    const tokens=[];
+    let i=0;
+
+    while(i<text.length) {
+        if(/\s/.test(text[i])) {
+            i++;
+            continue;
+        }
+
+        if(text[i]==="%") {
+            tokens.push("%");
+            i++;
+            continue;
+        }
+
+        const start=i;
+
+        if(text[i]==="=") {
+            i++;
+            while ( i<text.length && /[0-9eE+-]/.test(text[i])) i++;
+            tokens.push( text.slice(start,i) );
+            continue;
+        }
+
+        if(text[i]==="+"||text[i]==="-") i++;
+
+        let digits=false;
+
+        while ( i<text.length && /[0-9]/.test(text[i]) ) {
+            digits=true;
+            i++;
+        }
+
+        if( i<text.length && text[i]===".") {
+            i++;
+            while( i < text.length && /[0-9]/.test(text[i])) {
+                digits=true;
+                i++;
+            }
+        }
+
+        if(!digits) {
+            throw new Error(
+                `无法解析位置 ${start}：${text.slice(start,start+8)}`
+            );
+        }
+
+        if( i<text.length&& ( text[i]==="e" || text[i]==="E")) {
+            i++;
+            if( i<text.length && ( text[i]==="+" || text[i]==="-" )) i++;
+
+            const exponentStart = i;
+
+            while(
+                i<text.length&&
+                /[0-9]/.test(text[i])
+            )i++;
+
+            if(exponentStart===i) {
+                throw new Error(
+                    "e 后面缺少指数"
+                );
+            }
+        }
+
+        tokens.push(
+            text.slice(start,i)
+        );
+    }
+
+    return tokens;
+}
+
+function parseArithmeticToken(token) {
+    let sign=1;
+    let body=token;
+
+    if(
+        body[0]==="+"||
+        body[0]==="-"
+    ) {
+        if(body[0]==="-")sign=-1;
+        body=body.slice(1);
+    }
+
+    const m=
+        body.match(
+            /^([0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:e([+-]?\d+))?$/i
+        );
+
+    if(!m) {
+        throw new Error(
+            `无效加减指令：${token}`
+        );
+    }
+
+    const mantissa=Number(m[1]);
+    const exponent=
+        m[2]===undefined
+            ? 0
+            : Number(m[2]);
+
+    const value=
+        mantissa*
+        10**exponent;
+
+    if(!Number.isSafeInteger(value)) {
+        throw new Error(
+            `指令 ${token} 最终不是整数或超出范围`
+        );
+    }
+
+    return {
+        sign,
+        value,
+        /* 仅当尾数本身是整数时，保留 e 指定的起始数位。 */
+        position:
+            /^\d+$/.test(m[1])&&exponent>=0
+                ? exponent
+                : 0,
+        digits:
+            /^\d+$/.test(m[1])&&exponent>=0
+                ? Number(m[1])
+                : value
+    };
+}
+
+function parseSetToken(token) {
+    const m=
+        token.slice(1).match(
+            /^([0-9]+)(?:e(\d+))?$/i
+        );
+
+    if(!m) {
+        throw new Error(
+            `无效置数指令：${token}`
+        );
+    }
+
+    return {
+        digits:m[1],
+        exponent:
+            m[2]===undefined
+                ? 0
+                : Number(m[2])
+    };
+}
+
+function integerToDigits(
+    value,
+    digits,
+    unitIndex
+) {
+    const n=BigInt(value);
+    const max=10n**BigInt(digits-unitIndex);
+
+    if(
+        n<0n||
+        n>=max
+    ) {
+        throw new Error(
+            `数值 ${value} 超出 ${digits} 位算盘范围`
+        );
+    }
+
+    const result=Array(digits).fill(0);
+    const chars=n
+        .toString()
+        .split("")
+        .reverse();
+
+    for(let i=0;i<chars.length;i++)result[unitIndex+i]=Number(chars[i]);
+    return result;
+}
+
+function compileProgram(
+    text,
+    digits,
+    unitIndex=0
+) {
+    const tokens=
+        tokenizeProgram(text);
+
+    const max=
+        10n**BigInt(digits-unitIndex);
+
+    let current=0n;
+
+    const commands=[
+        {
+            type:"state",
+            state:
+                integerToDigits(
+                    current,
+                    digits,
+                    unitIndex
+                )
+        }
+    ];
+
+    for(
+        const token of tokens
+    ) {
+
+        /*
+         * 清零
+         */
+
+        if(token==="%") {
+            current=0n;
+
+            commands.push({
+                type:"state",
+                state:
+                    integerToDigits(
+                        current,
+                        digits,
+                        unitIndex
+                    )
+            });
+
+            continue;
+        }
+
+        /*
+         * 局部置数
+         */
+
+        if(token[0]==="=") {
+
+            let ds=
+                integerToDigits(
+                        current,
+                        digits,
+                        unitIndex
+                );
+
+            const info=
+                parseSetToken(
+                    token
+                );
+
+            const chars=
+                info.digits;
+
+            for(
+                let j=0;
+                j<chars.length;
+                j++
+            ) {
+
+                const position=
+                    unitIndex+info.exponent+j;
+
+                if(
+                    position>=digits
+                ) {
+                    throw new Error(
+                        `置数 ${token} 超出算盘范围`
+                    );
+                }
+
+                const digit=
+                    Number(
+                        chars[
+                            chars.length-
+                            1-
+                            j
+                        ]
+                    );
+
+                ds[position]=digit;
+            }
+
+            current=
+                BigInt(
+                    ds.slice(unitIndex).reverse().join("")
+                );
+
+            commands.push({
+                type:"state",
+                state:ds
+            });
+
+            continue;
+        }
+
+        /*
+         * 加减法
+         */
+
+        const info=
+            parseArithmeticToken(
+                token
+            );
+
+        const delta=
+            BigInt(info.sign*info.value);
+
+        current+=delta;
+
+        if(
+            current<0n||
+            current>=max
+        ) {
+            throw new Error(
+                `执行 ${token} 后算盘溢出：${current}`
+            );
+        }
+
+        if(delta>=0n) {
+            commands.push({
+                type:"add",
+                value:info.digits,
+                position:unitIndex+info.position
+            });
+        } else {
+            commands.push({
+                type:"subtract",
+                value:info.digits,
+                position:unitIndex+info.position
+            });
+        }
+    }
+
+    return commands;
+}
+
+
+/* =========================================================
+ * 指令加载
+ * ========================================================= */
+
+const defaultProgram=
+    `% 1 2 +3 +4e0-1-2 -3 +11051e1=4e3 =000`;
+
+function loadProgram() {
+    try {
+        const text=
+            document.getElementById(
+                "program"
+            ).value;
+
+        const compiled=
+            compileProgram(
+                text,
+                abacus.digits,
+                abacus.unitIndex
+            );
+
+        player.pause();
+
+        player.commands=
+            compiled;
+
+        player.index=0;
+
+        player.rebuildTo(0);
+
+        document.getElementById(
+            "programStatus"
+        ).textContent=
+            `已载入 ${compiled.length-1} 条操作`;
+    } catch(e) {
+        document.getElementById(
+            "programStatus"
+        ).textContent=
+            `错误：${e.message}`;
+    }
+}
+
+
+/* =========================================================
+ * 创建算盘
+ * ========================================================= */
+
+const abacus=
+    /* e-1 到 e5：既保留 state[1]=e0，也容纳 +11051e1 的 e5。 */
+    new Abacus(7,1);
+
+
+/* =========================================================
+ * 创建播放器
+ * ========================================================= */
+
+let commands=
+    compileProgram(
+        defaultProgram,
+        abacus.digits,
+        abacus.unitIndex
+    );
+
+const player=
+    new Player(
+        abacus,
+        commands
+    );
+
+
+/* =========================================================
+ * 速度控制
+ * ========================================================= */
+
+document
+    .getElementById("speed")
+    .addEventListener(
+        "input",
+        function() {
+            player.setSpeed(
+                this.value
+            );
+        }
+    );
+
+
+/* =========================================================
+ * 页面切到后台时暂停
+ *
+ * 防止 requestAnimationFrame / setTimeout
+ * 被后台节流后，恢复页面时声音集中爆发。
+ * ========================================================= */
+
+let wasPlayingBeforeHidden=false;
+
+document.addEventListener(
+    "visibilitychange",
+    ()=>{
+        if(document.hidden) {
+            wasPlayingBeforeHidden=
+                player.playing;
+
+            if(player.playing) {
+                player.pause();
+            }
+        } else if(
+            wasPlayingBeforeHidden
+        ) {
+            wasPlayingBeforeHidden=false;
+            player.play();
+        }
+    }
+);
+</script>
+</body>
+</html>
